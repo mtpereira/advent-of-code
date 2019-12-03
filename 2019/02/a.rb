@@ -1,7 +1,7 @@
 require "./lib/intcode"
 
 def input
-  integers = ""
+  integers = []
   ARGF.each_line do |line|
     integers = line.split(",").map(&:to_i)
     integers[1] = 12
