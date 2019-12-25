@@ -5,9 +5,12 @@ class Wire
 
     coordinates.unshift("0")
     (0..coordinates.length - 2).each do |i|
-      @lines = @lines.append(Line.new(coordinates[i], coordinates[i + 1]))
+      @lines = @lines.append(
+        Line.new(
+          *parse_points(coordinates[i], coordinates[i + 1])
+        )
+      )
     end
-    puts @lines
   end
 
   def lines
@@ -19,75 +22,14 @@ class Wire
     @lines.each do |line|
       other.lines.each do |other_line|
         intersection = line.intersection(other_line)
-        points = points.append(intersection) if intersection == true
+        points = points.append(intersection) unless intersection.nil?
       end
     end
     puts "intersections: #{points}"
     points
   end
-end
-
-class Line
-  def initialize(first_coordinate, second_coordinate)
-    @start_point, @end_point = parse_points(first_coordinate, second_coordinate)
-  end
-
-  def points
-    [@start_point, @end_point]
-  end
-
-  def start_point
-    @start_point
-  end
-
-  def end_point
-    @end_point
-  end
-
-  def to_s
-    "#{@start_point} -> #{@end_point}"
-  end
-
-  def intersection(other)
-    div = calculate_div(other)
-    puts "div #{div}"
-    return false if div == 0
-
-    d = Point.new(x: det(*points), y: det(*other.points))
-    x = det(d, xdiff(other)) / div
-    y = det(d, ydiff(other)) / div
-
-    puts "intersection point: #{x}, #{y}"
-    point = Point.new(x: x, y: y)
-    if contains?(point) && other.contains?(point)
-      return point
-    end
-
-    false
-  end
-
-  def contains?(point)
-    point.x >= start_point.x && point.x <= end_point.x && point.y >= start_point.y && point.y <= end_point.y
-  end
 
   private
-
-    def calculate_div(other)
-      det(xdiff(other), ydiff(other))
-    end
-
-    def xdiff(other)
-      Point.new(x: start_point.x - other.start_point.x, y: end_point.x - other.end_point.x)
-    end
-
-    def ydiff(other)
-      Point.new(x: start_point.y - other.start_point.y, y: end_point.y - other.end_point.y)
-    end
-
-    def det(a, b)
-      puts "det a #{a} b #{b}"
-      a.x * b.y - a.y * b.x
-    end
 
     def parse_points(first, second)
       x, y = 0, 0
@@ -114,6 +56,67 @@ class Line
     end
 end
 
+class Line
+  attr_reader :start_point, :end_point, :a, :b
+
+  def initialize(start_point, end_point)
+    @start_point, @end_point = start_point, end_point
+    @a = (start_point.y - end_point.y).fdiv(start_point.x - end_point.x)
+    @b = start_point.y - @a * start_point.x
+  end
+
+  def points
+    [@start_point, @end_point]
+  end
+
+  def to_s
+    "y = #{@a}x + #{@b}"
+  end
+
+  def lines_intersect?(other)
+    bounding_boxes_intersect?(other) && touches?(other) && other.touches?(self)
+  end
+
+  def intersection(other)
+    return nil if @a == other.a
+
+    x = (other.b - @b).fdiv(@a - other.a)
+    y = @a * x + @b
+    Point.new(x: x, y: y) unless (x.infinite? || x.nan?) || (y.infinite? || y.nan?)
+  end
+
+  def contains?(point)
+    point.x >= start_point.x && point.x <= end_point.x && point.y >= start_point.y && point.y <= end_point.y
+  end
+
+  def bounding_box
+    first = Point.new(
+      x: points.map(&:x).minmax.first,
+      y: points.map(&:y).minmax.first
+    )
+    second = Point.new(
+      x: points.map(&:x).minmax.last,
+      y: points.map(&:y).minmax.last
+    )
+    [first, second]
+  end
+
+  def touches?(other)
+    contains?(other.start_point) || contains?(other.end_point) ||
+      (other.start_point.right_of?(self) ^ other.end_point.right_of?(self))
+  end
+
+  private
+
+    def bounding_boxes_intersect?(other)
+      a, b = bounding_box, other.bounding_box
+      a[0].x <= b[1].x \
+        && a[1].x >= b[0].x \
+        && a[0].y <= b[1].y \
+        && a[1].y >= b[0].y
+    end
+end
+
 class InvalidCoordinate < StandardError
 end
 
@@ -136,6 +139,25 @@ class Point
 
   def coordinates
     [@x, @y]
+  end
+
+  def right_of?(line)
+    moved_line = Line.new(
+      Point.new(x: 0, y: 0),
+      Point.new(
+        x: line.end_point.x - line.start_point.x,
+        y: line.end_point.y - line.start_point.y
+      )
+    )
+    point = Point.new(
+      x: x - line.start_point.x,
+      y: y - line.start_point.y
+    )
+    point.cross_product(moved_line.end_point) < 0
+  end
+
+  def cross_product(other)
+    x * other.y - other.x * y
   end
 
   def ==(other)
